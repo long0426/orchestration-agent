@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
     help="要綁定 OrchestratorAgent 伺服器的主機"
 )
 @click.option(
-    "--port", default=10002,
+    "--port", default=10000,
     help="OrchestratorAgent 伺服器的埠號"
 )
 @click.option(
@@ -73,13 +73,15 @@ def main(host: str, port: int, registry: str):
         id="orchestrate",                          # 技能唯一識別碼
         name="Orchestrate Tasks",                  # 人類可讀名稱
         description=(
-            "根據意圖（時間、問候等）將使用者請求路由到適當的子代理"
+            "根據意圖（時間、問候、Excel解析等）將使用者請求路由到適當的子代理"
         ),
         tags=["routing", "orchestration"],       # 關鍵字，方便發現
         examples=[                                  # 使用者查詢範例
             "What is the time?",
             "Greet me",
-            "Say hello based on time"
+            "Say hello based on time",
+            "Read Excel file",
+            "Read Excel file and summarize the content"
         ]
     )
     orchestrator_card = AgentCard(
