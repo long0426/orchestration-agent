@@ -47,4 +47,30 @@
 # 附錄  
 - 研究發現：參考 Google ADK、Google A2A、OpenAI 多代理協作架構
 - 技術規格：詳見 pyproject.toml 依賴與各 agents/server/models/utilities 目錄
+- CLI 範例：
+  - 啟動 OrchestratorAgent 後，可用 CLI 工具互動：
+    ```bash
+    python3 app/cmd/cmd.py --agent http://localhost:10000
+    ```
+  - 你可以直接輸入問題（如 "What time is it?"），或對 ExcelWhisperAgent 輸入 `read /path/to/file.xlsx`。
+- Python client 範例：
+    ```python
+    from client.client import A2AClient
+    import asyncio
+
+    async def main():
+        client = A2AClient(url="http://localhost:10004")
+        payload = {
+            "id": "your-task-id",
+            "sessionId": "your-session-id",
+            "message": {
+                "role": "user",
+                "parts": [{"type": "text", "text": "read /path/to/file.xlsx"}]
+            }
+        }
+        result = await client.send_task(payload)
+        print(result)
+
+    asyncio.run(main())
+    ```
 </PRD> 

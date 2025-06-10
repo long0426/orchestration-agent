@@ -87,7 +87,7 @@ python3 -m agents.excel_whisper_agent --host=localhost --port=10003
 
 以 TellTimeAgent 為例：
 ```bash
-python3 app/cmd/cmd.py --agent http://localhost:10002
+python3 app/cmd/cmd.py --agent http://localhost:10000
 ```
 你可以直接輸入問題（如 "What time is it?"），或對 ExcelWhisperAgent 輸入 `read /path/to/file.xlsx`。
 
@@ -99,7 +99,7 @@ from client.client import A2AClient
 import asyncio
 
 async def main():
-    client = A2AClient(url="http://localhost:10003")
+    client = A2AClient(url="http://localhost:10004")
     payload = {
         "id": "your-task-id",
         "sessionId": "your-session-id",
