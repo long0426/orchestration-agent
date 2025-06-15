@@ -10,7 +10,7 @@ import uuid                           # 標準函式庫，用於產生唯一 ID
 import logging                        # 標準函式庫，用於彈性日誌紀錄
 
 # 匯入自訂的 A2AClient，負責處理 JSON-RPC 任務請求
-from client.client import A2AClient
+from client.client_bat import A2AClient
 # 匯入 Task 模型，用於表示完整的任務回應
 from models.task import Task
 

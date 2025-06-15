@@ -17,9 +17,17 @@
 import asyncclick as click        # click is a CLI tool; asyncclick supports async functions
 import asyncio                    # Built-in Python module to run async event loops
 from uuid import uuid4            # Used to generate unique task and session IDs
+import httpx                      # Async HTTP client
+import json                       # 用於 JSON 格式化
 
-# Import the A2AClient from your client module (it handles request/response logic)
-from client.client import A2AClient
+# Import the A2A SDK client and related types
+from a2a.client import A2AClient
+from a2a.types import (
+    SendMessageRequest,
+    MessageSendParams,
+    Task,
+    TaskState
+)
 
 # Import the Task model so we can handle and parse responses from the agent
 from models.task import Task
@@ -51,52 +59,77 @@ async def cli(agent: str, session: str, history: bool):
     """
 
     # Initialize the client by providing the full POST endpoint for sending tasks
-    client = A2AClient(url=f"{agent}")
+    async with httpx.AsyncClient() as httpx_client:
+        client = A2AClient(url=f"{agent}", httpx_client=httpx_client)
 
-    # Generate a new session ID if not provided (user passed 0)
-    session_id = uuid4().hex if str(session) == "0" else str(session)
+        # Generate a new session ID if not provided (user passed 0)
+        session_id = uuid4().hex if str(session) == "0" else str(session)
 
-    # Start the main input loop
-    while True:
-        # Prompt user for input
-        prompt = click.prompt("\nWhat do you want to send to the agent? (type ':q' or 'quit' to exit)")
+        # Start the main input loop
+        while True:
+            # Prompt user for input
+            prompt = click.prompt("\nWhat do you want to send to the agent? (type ':q' or 'quit' to exit)")
 
-        # Exit loop if user types ':q' or 'quit'
-        if prompt.strip().lower() in [":q", "quit"]:
-            break
+            # Exit loop if user types ':q' or 'quit'
+            if prompt.strip().lower() in [":q", "quit"]:
+                break
 
-        # Construct the payload using the expected JSON-RPC task format
-        payload = {
-            "id": uuid4().hex,  # Generate a new unique task ID for this message
-            "sessionId": session_id,  # Reuse or create session ID
-            "message": {
-                "role": "user",  # The message is from the user
-                "parts": [{"type": "text", "text": prompt}]  # Wrap user input in a text part
+            # Construct the payload using the expected JSON-RPC task format
+            payload = {
+                "message": {
+                    "role": "user",  # The message is from the user
+                    "parts": [{"kind": "text", "text": prompt}],  # Wrap user input in a text part
+                    "messageId": uuid4().hex  # Generate a new unique message ID
+                }
             }
-        }
 
-        try:
-            # Send the task to the agent and get a structured Task response
-            task: Task = await client.send_task(payload)
+            try:
+                # Send the message to the agent and get a structured Task response
+                request = SendMessageRequest(
+                    id=uuid4().hex,  # 添加必需的 id 字段
+                    params=MessageSendParams(**payload)
+                )
+                result = await client.send_message(request)
+                print("\n📤 收到的回應：")
+                print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))
+                
+                # 檢查是否為錯誤響應
+                if hasattr(result, 'error'):
+                    print(f"\n❌ 代理返回錯誤: {result.error.message}")
+                    continue
+                
+                # 處理成功響應
+                response_data = result.model_dump()['result']
+                print(f"\n📝 任務 ID: {response_data['id']}")
+                print(f"📝 任務狀態: {response_data['status']['state']}")
+                
+                # 從 artifacts 中提取時間信息
+                answer = []
+                if response_data['artifacts'] and len(response_data['artifacts']) > 0:
+                    for artifact in response_data['artifacts']:
+                        if artifact['name'] == 'current_result' and artifact['parts']:
+                            for part in artifact['parts']:
+                                if part['kind'] == 'text':
+                                    answer.append(part['text'])
 
-            # Check if the agent responded (expecting at least 2 messages: user + agent)
-            if task.history and len(task.history) > 1:
-                reply = task.history[-1]  # Last message is usually from the agent
-                print("\nAgent says:", reply.parts[0].text)  # Print agent's text reply
-            else:
-                print("\nNo response received.")
+                # Check if the agent responded (expecting at least 2 messages: user + agent)
+                if response_data['history']:
+                    reply = response_data['history'][-1]  # Last message is usually from the agent
+                    print("\nAgent says:", "".join(answer))  # Print agent's text reply
+                else:
+                    print("\nNo response received.")
 
-            # If --history flag was set, show the entire conversation history
-            if history:
-                print("\n========= Conversation History =========")
-                for msg in task.history:
-                    print(f"[{msg.role}] {msg.parts[0].text}")  # Show each message in sequence
+                # If --history flag was set, show the entire conversation history
+                if history:
+                    print("\n========= Conversation History =========")
+                    for msg in response_data['history']:
+                        print(f"[{msg['role']}] {msg['parts'][0]['text']}")  # Show each message in sequence
 
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            # Catch and print any errors (e.g., server not running, invalid response)
-            print(f"\n❌ Error while sending task: {e}")
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                # Catch and print any errors (e.g., server not running, invalid response)
+                print(f"\n❌ Error while sending task: {e}")
 
 
 # -----------------------------------------------------------------------------
