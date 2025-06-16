@@ -32,6 +32,8 @@ from dotenv import load_dotenv
 load_dotenv()  # Load variables like GOOGLE_API_KEY into the system
 # This allows you to keep sensitive data out of your code.
 
+from .instruction import INSTRUCTION
+
 
 # -----------------------------------------------------------------------------
 # 🕒 TellTimeAgent: Your AI agent that tells the time
@@ -70,7 +72,7 @@ class TellTimeAgent:
             model="gemini-1.5-flash-latest",         # Gemini model version
             name="tell_time_agent",                  # Name of the agent
             description="Tells the current time",    # Description for metadata
-            instruction="Reply with the current time in the format YYYY-MM-DD HH:MM:SS."  # System prompt
+            instruction=INSTRUCTION  # System prompt
         )
 
     async def invoke(self, query: str, session_id: str) -> str:

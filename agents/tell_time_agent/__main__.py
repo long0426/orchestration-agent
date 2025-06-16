@@ -1,5 +1,5 @@
 # =============================================================================
-# agents/tell_time_agent/main.py
+# agents/tell_time_agent/__main__.py
 # =============================================================================
 # Purpose:
 # This file starts the A2A-compatible agent server.
@@ -98,7 +98,7 @@ def build_agent_card(host: str, port: int) -> AgentCard:
     )
 
 # -----------------------------------------------------------------------------
-# This ensures the server starts when you run `python -m agents.tell_time_agent.main`
+# This ensures the server starts when you run `python3 -m agents.tell_time_agent
 # -----------------------------------------------------------------------------
 if __name__ == '__main__':
     main()

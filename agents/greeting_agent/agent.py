@@ -2,68 +2,82 @@
 # agents/greeting_agent/agent.py
 # =============================================================================
 # 🎯 Purpose:
-#   A composite “orchestrator” agent that:
+# A composite “orchestrator” agent that:
 #     1) Discovers all registered A2A agents via DiscoveryClient
 #     2) Invokes the TellTimeAgent to fetch the current time
 #     3) Generates a 2–3 line poetic greeting referencing that time
 # =============================================================================
 
-import logging                              # Built-in module to log info, warnings, errors
-from dotenv import load_dotenv              # For loading environment variables from a .env file
 
-load_dotenv()  # Read .env in project root so that GOOGLE_API_KEY (and others) are set
+# -----------------------------------------------------------------------------
+# 📦 Built-in & External Library Imports
+# -----------------------------------------------------------------------------
 
-# Gemini LLM agent and supporting services from Google’s ADK:
+# 🧠 Gemini-based AI agent provided by Google's ADK
 from google.adk.agents.llm_agent import LlmAgent
+
+# 📚 ADK services for session, memory, and file-like "artifacts"
 from google.adk.sessions import InMemorySessionService
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.artifacts import InMemoryArtifactService
+
+# 🏃 The "Runner" connects the agent, session, memory, and files into a complete system
 from google.adk.runners import Runner
 
-# Gemini types for wrapping messages
+# 🧾 Gemini-compatible types for formatting input/output messages
 from google.genai import types
 
-# Helper to wrap our Python functions as “tools” for the LLM to call
-from google.adk.tools.function_tool import FunctionTool
-
-# Utilities we wrote for agent discovery and HTTP connection:
+# 🔍 Discovery client for finding other agents
 from utilities.discovery import DiscoveryClient
-from agents.host_agent.agent_connect import AgentConnector
 
-# Create a module-level logger using this file’s name
-logger = logging.getLogger(__name__)
+# 🔗 Connector for interacting with other agents
+from utilities.a2a.agent_connect import AgentConnector
 
+# 📝 Instruction for the GreetingAgent
+from .instruction import INSTRUCTION
+
+# 🔧 FunctionTool for interacting with other agents
+from google.adk.tools import FunctionTool
+
+# 🔐 Load environment variables (like API keys) from a `.env` file. 
+# This allows you to keep sensitive data out of your code
+from dotenv import load_dotenv
+load_dotenv()  # Load variables like GOOGLE_API_KEY into the system
+
+
+# -----------------------------------------------------------------------------
+# 🕒 GreetingAgent: Your AI agent that crafts a 2–3 line poetic greeting referencing that time
+# -----------------------------------------------------------------------------
 
 class GreetingAgent:
     """
-    🧠 Orchestrator “meta-agent” that:
-      - Provides two LLM tools: list_agents() and call_agent(...)
-      - On a “greet me” request:
-          1) Calls list_agents() to see which agents are up
-          2) Calls call_agent("TellTimeAgent", "What is the current time?")
-          3) Crafts a 2–3 line poetic greeting referencing that time
-    """
-
-    # Declare which content types this agent accepts by default
+        🧠 Orchestrator “meta-agent” that:
+            - Provides two LLM tools: list_agents() and call_agent(...)
+            - On a “greet me” request:
+                1) Calls list_agents() to see which agents are up
+                2) Calls call_agent("TellTimeAgent", "What is the current time?")
+                3) Crafts a 2–3 line poetic greeting referencing that time
+        """
+    
+    # This agent only supports plain text input/output
     SUPPORTED_CONTENT_TYPES = ["text", "text/plain"]
 
     def __init__(self):
         """
-        🏗️ Constructor: build the internal orchestrator LLM, runner, discovery client.
+        👷 Initialize the GreetingAgent:
+        - Creates the LLM agent (powered by Gemini)
+        - Sets up session handling, memory, and a runner to execute tasks
         """
-        # Build the LLM with its tools and system instruction
-        self.orchestrator = self._build_orchestrator()
+        self._agent = self._build_agent()  # Set up the Gemini agent
+        self._user_id = "time_agent_user"  # Use a fixed user ID for simplicity
 
-        # A fixed user_id to group all greeting calls into one session
-        self.user_id = "greeting_user"
-
-        # Runner wires together: agent logic, sessions, memory, artifacts
-        self.runner = Runner(
-            app_name=self.orchestrator.name,
-            agent=self.orchestrator,
-            artifact_service=InMemoryArtifactService(),       # file blobs, unused here
-            session_service=InMemorySessionService(),         # in-memory sessions
-            memory_service=InMemoryMemoryService(),           # conversation memory
+        # 🧠 The Runner is what actually manages the agent and its environment
+        self._runner = Runner(
+            app_name=self._agent.name,
+            agent=self._agent,
+            artifact_service=InMemoryArtifactService(),  # For files (not used here)
+            session_service=InMemorySessionService(),    # Keeps track of conversations
+            memory_service=InMemoryMemoryService(),      # Optional: remembers past messages
         )
 
         # A helper client to discover what agents are registered
@@ -72,10 +86,12 @@ class GreetingAgent:
         # Cache for created connectors so we reuse them
         self.connectors: dict[str, AgentConnector] = {}
 
-
-    def _build_orchestrator(self) -> LlmAgent:
+    def _build_agent(self) -> LlmAgent:
         """
-        🔧 Internal: define the LLM, its system instruction, and wrap tools.
+        ⚙️ Creates and returns a Gemini agent with basic settings.
+
+        Returns:
+            LlmAgent: An agent object from Google's ADK
         """
 
         # --- Tool 1: list_agents ---
@@ -88,8 +104,7 @@ class GreetingAgent:
             cards = await self.discovery.list_agent_cards()
             # Convert each card to a dict (dropping None fields)
             return [card.model_dump(exclude_none=True) for card in cards]
-
-
+        
         # --- Tool 2: call_agent ---
         async def call_agent(agent_name: str, message: str) -> str:
             """
@@ -141,68 +156,40 @@ class GreetingAgent:
             # If no reply, return empty string
             return ""
 
-
-        # --- System instruction for the LLM ---
-        system_instr = (
-            "You have two tools:\n"
-            "1) list_agents() → returns metadata for all available agents.\n"
-            "2) call_agent(agent_name: str, message: str) → fetches a reply from that agent.\n"
-            "When asked to greet, first call list_agents(), then "
-            "call_agent('TellTimeAgent','What is the current time?'), "
-            "then craft a 2–3 line poetic greeting referencing that time."
-        )
-
         # Wrap our Python functions into ADK FunctionTool objects
-        tools = [
-            FunctionTool(list_agents),   # auto-uses function name and signature
-            FunctionTool(call_agent),
-        ]
+        list_agents_tool = FunctionTool(list_agents)
+        call_agent_tool = FunctionTool(call_agent)
 
-        # Finally, create and return the LlmAgent with everything wired up
+        # --- Build the agent ---
         return LlmAgent(
-            model="gemini-1.5-flash",               # which Gemini model
-            name="greeting_orchestrator",                  # internal name
-            description="Orchestrates time fetching and generates poetic greetings.",
-            instruction=system_instr,                      # system prompt
-            tools=tools,                                   # available tools
+            model="gemini-1.5-flash-latest",         # Gemini model version
+            name="greeting_agent",                  # Name of the agent
+            description="Greetings the user",    # Description for metadata
+            instruction=INSTRUCTION,  # System prompt
+            tools=[list_agents, call_agent]  # Add our tools
         )
-
 
     async def invoke(self, query: str, session_id: str) -> str:
         """
-        🔄 Public: send a user query through the orchestrator LLM pipeline,
-        ensuring session reuse or creation, and return the final text reply.
-        Note - function updated 28 May 2025
-        Summary of changes:
-        1. Agent's invoke method is made async
-        2. All async calls (get_session, create_session, run_async) 
-            are awaited inside invoke method
-        3. task manager's on_send_task updated to await the invoke call
-
-        Reason - get_session and create_session are async in the 
-        "Current" Google ADK version and were synchronous earlier 
-        when this lecture was recorded. This is due to a recent change 
-        in the Google ADK code 
-        https://github.com/google/adk-python/commit/1804ca39a678433293158ec066d44c30eeb8e23b
-
+        Handle a user query and return a response string.
         """
-        # 1) Try to fetch an existing session
-        session = await self.runner.session_service.get_session(
-            app_name=self.orchestrator.name,
-            user_id=self.user_id,
-            session_id=session_id,
+
+        # 🔁 Try to reuse an existing session (or create one if needed)
+        session = await self._runner.session_service.get_session(
+            app_name=self._agent.name,
+            user_id=self._user_id,
+            session_id=session_id
         )
 
-        # 2) If not found, create a new session with empty state
         if session is None:
-            session = await self.runner.session_service.create_session(
-                app_name=self.orchestrator.name,
-                user_id=self.user_id,
+            session = await self._runner.session_service.create_session(
+                app_name=self._agent.name,
+                user_id=self._user_id,
                 session_id=session_id,
-                state={},  # you could prefill memory here if desired
+                state={}  # Optional dictionary to hold session state
             )
 
-        # 3) Wrap the user’s text in a Gemini Content object
+        # 📨 Format the user message in a way the Gemini model expects
         content = types.Content(
             role="user",
             parts=[types.Part.from_text(text=query)]
@@ -210,8 +197,8 @@ class GreetingAgent:
 
         # 🚀 Run the agent using the Runner and collect the last event
         last_event = None
-        async for event in self.runner.run_async(
-            user_id=self.user_id,
+        async for event in self._runner.run_async(
+            user_id=self._user_id,
             session_id=session.id,
             new_message=content
         ):
@@ -223,3 +210,15 @@ class GreetingAgent:
 
         # 📤 Extract and join all text responses into one string
         return "\n".join([p.text for p in last_event.content.parts if p.text])
+
+
+    async def stream(self, query: str, session_id: str):
+        """
+        🌀 Simulates a "streaming" agent that returns a single reply.
+        This is here just to demonstrate that streaming is possible.
+
+        """
+        yield {
+            "is_task_complete": True,
+            "content": f"Hello, how are you?"
+        }
