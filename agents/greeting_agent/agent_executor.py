@@ -54,6 +54,8 @@ class GreetingAgentExecutor(AgentExecutor):  # Define a new executor by extendin
         query = context.get_user_input()  # Extracts the actual text of the user's message
         task = context.current_task      # Gets the task object if it already exists
 
+        print("\n🔍 GreetingAgent 收到的請求:", query)  # 印出收到的請求
+
         if not context.message:          # Ensure the message is not missing
             raise Exception('No message provided')  # Raise an error if something's wrong
 
@@ -65,6 +67,7 @@ class GreetingAgentExecutor(AgentExecutor):  # Define a new executor by extendin
         async for event in self.agent.stream(query, task.contextId):
 
             if event['is_task_complete']:  # If the task has been successfully completed
+                print("\n📤 GreetingAgent 送出的回應:", event['content'])  # 印出送出的回應
                 # Send the result artifact to the A2A server
                 await event_queue.enqueue_event(
                     TaskArtifactUpdateEvent(

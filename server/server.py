@@ -92,10 +92,11 @@ class A2AServer:
             """
             try:
                 body = await request.json()
-                print("\n🔍 收到的 JSON:", json.dumps(body, indent=2))
+                print("\n🔍 收到的請求:", json.dumps(body, indent=2))
                 json_rpc = A2ARequest.validate_python(body)
                 if isinstance(json_rpc, SendTaskRequest):
                     result = await server.task_manager.on_send_task(json_rpc)
+                    print("\n📤 送出的回應:", json.dumps(result.model_dump(), indent=2))
                 else:
                     raise ValueError(f"不支援的 A2A 方法: {type(json_rpc)}")
                 return server._create_response(result)

@@ -2,7 +2,7 @@
 # agents/greeting_agent/agent.py
 # =============================================================================
 # 🎯 Purpose:
-# A composite “orchestrator” agent that:
+# A composite "orchestrator" agent that:
 #     1) Discovers all registered A2A agents via DiscoveryClient
 #     2) Invokes the TellTimeAgent to fetch the current time
 #     3) Generates a 2–3 line poetic greeting referencing that time
@@ -51,9 +51,9 @@ load_dotenv()  # Load variables like GOOGLE_API_KEY into the system
 
 class GreetingAgent:
     """
-        🧠 Orchestrator “meta-agent” that:
+        🧠 Orchestrator "meta-agent" that:
             - Provides two LLM tools: list_agents() and call_agent(...)
-            - On a “greet me” request:
+            - On a "greet me" request:
                 1) Calls list_agents() to see which agents are up
                 2) Calls call_agent("TellTimeAgent", "What is the current time?")
                 3) Crafts a 2–3 line poetic greeting referencing that time
@@ -109,7 +109,7 @@ class GreetingAgent:
         async def call_agent(agent_name: str, message: str) -> str:
             """
             Given an agent_name string and a user message,
-            find that agent’s URL, send the task, and return its reply.
+            find that agent's URL, send the task, and return its reply.
             """
             # Re-fetch registry each call to catch new agents dynamically
             cards = await self.discovery.list_agent_cards()
@@ -133,9 +133,9 @@ class GreetingAgent:
             if not matched:
                 raise ValueError(f"Agent '{agent_name}' not found.")
 
-            # Use Pydantic model’s name field as key
+            # Use Pydantic model's name field as key
             key = matched.name
-            # If we haven’t built a connector yet, create and cache one
+            # If we haven't built a connector yet, create and cache one
             if key not in self.connectors:
                 self.connectors[key] = AgentConnector(
                     name=matched.name,
@@ -144,16 +144,51 @@ class GreetingAgent:
             connector = self.connectors[key]
 
             # Use a single session per greeting agent run (could be improved)
-            session_id = self.user_id
+            session_id = self._user_id
 
             # Delegate the task and wait for the full Task object
+            print(f"🔗 GreetingAgent: Calling {matched.name} with message: '{message}'")
             task = await connector.send_task(message, session_id=session_id)
+            print(f"🔗 GreetingAgent: Received task from {matched.name}: {task}")
 
-            # Pull the final agent reply out of the history
-            if task.history and task.history[-1].parts:
-                return task.history[-1].parts[0].text
+            # Try to extract the response from artifacts first (A2A SDK pattern)
+            if task.artifacts:
+                print(f"🔗 GreetingAgent: Found {len(task.artifacts)} artifacts")
+                for i, artifact in enumerate(task.artifacts):
+                    print(f"🔗 GreetingAgent: Artifact[{i}]: name='{artifact.name}', description='{artifact.description}'")
+                    if artifact.name == 'current_result' and artifact.parts:
+                        for j, part in enumerate(artifact.parts):
+                            print(f"🔗 GreetingAgent: Artifact[{i}].Part[{j}]: {part}")
+                            # Try to extract text from the artifact part
+                            if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                                result = part.root.text
+                                print(f"🔗 GreetingAgent: Extracted text from artifact via .root.text: '{result}'")
+                                return result
+                            elif hasattr(part, 'text'):
+                                result = part.text
+                                print(f"🔗 GreetingAgent: Extracted text from artifact via .text: '{result}'")
+                                return result
 
-            # If no reply, return empty string
+            # Fallback: try to extract from history (traditional pattern)
+            if task.history and len(task.history) > 1:
+                print(f"🔗 GreetingAgent: Task history length: {len(task.history)}")
+                # Look for agent response (not user message)
+                for i, message in enumerate(task.history):
+                    print(f"🔗 GreetingAgent: History[{i}] role: {message.role}")
+                    if str(message.role).lower() == 'agent' and message.parts:
+                        part = message.parts[0]
+                        print(f"🔗 GreetingAgent: Found agent message part: {part}")
+
+                        if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                            result = part.root.text
+                            print(f"🔗 GreetingAgent: Extracted text via .root.text: '{result}'")
+                            return result
+                        elif hasattr(part, 'text'):
+                            result = part.text
+                            print(f"🔗 GreetingAgent: Extracted text via .text: '{result}'")
+                            return result
+
+            print(f"🔗 GreetingAgent: Could not extract response from task")
             return ""
 
         # Wrap our Python functions into ADK FunctionTool objects
@@ -166,7 +201,7 @@ class GreetingAgent:
             name="greeting_agent",                  # Name of the agent
             description="Greetings the user",    # Description for metadata
             instruction=INSTRUCTION,  # System prompt
-            tools=[list_agents, call_agent]  # Add our tools
+            tools=[list_agents_tool, call_agent_tool]  # Add our FunctionTool objects
         )
 
     async def invoke(self, query: str, session_id: str) -> str:
@@ -216,9 +251,10 @@ class GreetingAgent:
         """
         🌀 Simulates a "streaming" agent that returns a single reply.
         This is here just to demonstrate that streaming is possible.
-
         """
+        # 使用 invoke 方法來處理請求，這樣才能使用 LLM 和工具
+        response = await self.invoke(query, session_id)
         yield {
             "is_task_complete": True,
-            "content": f"Hello, how are you?"
+            "content": response
         }

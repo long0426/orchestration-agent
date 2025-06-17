@@ -81,14 +81,14 @@ class TellTimeAgent:
         Note - function updated 28 May 2025
         Summary of changes:
         1. Agent's invoke method is made async
-        2. All async calls (get_session, create_session, run_async) 
+        2. All async calls (get_session, create_session, run_async)
             are awaited inside invoke method
         3. task manager's on_send_task updated to await the invoke call
 
-        Reason - get_session and create_session are async in the 
-        "Current" Google ADK version and were synchronous earlier 
-        when this lecture was recorded. This is due to a recent change 
-        in the Google ADK code 
+        Reason - get_session and create_session are async in the
+        "Current" Google ADK version and were synchronous earlier
+        when this lecture was recorded. This is due to a recent change
+        in the Google ADK code
         https://github.com/google/adk-python/commit/1804ca39a678433293158ec066d44c30eeb8e23b
 
         Args:
@@ -98,6 +98,8 @@ class TellTimeAgent:
         Returns:
             str: Agent's reply (usually the current time)
         """
+
+        print(f"⏰ TellTimeAgent.invoke: Received query: '{query}' with session_id: '{session_id}'")
 
         # 🔁 Try to reuse an existing session (or create one if needed)
         session = await self._runner.session_service.get_session(
@@ -131,10 +133,13 @@ class TellTimeAgent:
 
         # 🧹 Fallback: return empty string if something went wrong
         if not last_event or not last_event.content or not last_event.content.parts:
+            print(f"⏰ TellTimeAgent.invoke: No valid response generated")
             return ""
 
         # 📤 Extract and join all text responses into one string
-        return "\n".join([p.text for p in last_event.content.parts if p.text])
+        response = "\n".join([p.text for p in last_event.content.parts if p.text])
+        print(f"⏰ TellTimeAgent.invoke: Generated response: '{response}'")
+        return response
 
 
     async def stream(self, query: str, session_id: str):
@@ -145,7 +150,13 @@ class TellTimeAgent:
         Yields:
             dict: Response payload that says the task is complete and gives the time
         """
-        yield {
+        print(f"⏰ TellTimeAgent.stream: Processing query: '{query}' with session_id: '{session_id}'")
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        response_content = f"The current time is: {current_time}"
+
+        response = {
             "is_task_complete": True,
-            "content": f"The current time is: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            "content": response_content
         }
+        print(f"⏰ TellTimeAgent.stream: Yielding response: {response}")
+        yield response

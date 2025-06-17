@@ -54,40 +54,52 @@ class TellTimeAgentExecutor(AgentExecutor):  # Define a new executor by extendin
         query = context.get_user_input()  # Extracts the actual text of the user's message
         task = context.current_task      # Gets the task object if it already exists
 
+        print(f"⏰ TellTimeAgent: Received request")
+        print(f"⏰ TellTimeAgent: Query: '{query}'")
+        print(f"⏰ TellTimeAgent: Context message: {context.message}")
+        print(f"⏰ TellTimeAgent: Current task: {task}")
+
         if not context.message:          # Ensure the message is not missing
             raise Exception('No message provided')  # Raise an error if something's wrong
 
         if not task:                     # If no existing task, this is a new interaction
             task = new_task(context.message)       # Create a new task based on the message
+            print(f"⏰ TellTimeAgent: Created new task: {task}")
             await event_queue.enqueue_event(task)  # 等待事件入隊完成
 
         # Use the agent to handle the query via async stream
+        print(f"⏰ TellTimeAgent: Starting to process query with task.contextId: {task.contextId}")
         async for event in self.agent.stream(query, task.contextId):
+            print(f"⏰ TellTimeAgent: Generated event: {event}")
 
             if event['is_task_complete']:  # If the task has been successfully completed
+                print(f"⏰ TellTimeAgent: Task completed with content: '{event['content']}'")
                 # Send the result artifact to the A2A server
+                artifact = new_text_artifact(     # The result artifact
+                    name='current_result',      # Name of the artifact
+                    description='Result of request to agent.',  # Description
+                    text=event['content'],      # The actual result text
+                )
+                print(f"⏰ TellTimeAgent: Created artifact: {artifact}")
+
                 await event_queue.enqueue_event(
                     TaskArtifactUpdateEvent(
                         taskId=task.id,                 # ID of the task
                         contextId=task.contextId,       # ID of the context (conversation thread)
-                        artifact=new_text_artifact(     # The result artifact
-                            name='current_result',      # Name of the artifact
-                            description='Result of request to agent.',  # Description
-                            text=event['content'],      # The actual result text
-                        ),
+                        artifact=artifact,
                         append=False,                   # Not appending to previous result
                         lastChunk=True,                 # This is the final chunk of the result
                     )
                 )
                 # Send final status update: task is completed
-                await event_queue.enqueue_event(
-                    TaskStatusUpdateEvent(
-                        taskId=task.id,                 # ID of the task
-                        contextId=task.contextId,       # Context ID
-                        status=TaskStatus(state=TaskState.completed),  # Mark task as completed
-                        final=True,                     # This is the last status update
-                    )
+                status_event = TaskStatusUpdateEvent(
+                    taskId=task.id,                 # ID of the task
+                    contextId=task.contextId,       # Context ID
+                    status=TaskStatus(state=TaskState.completed),  # Mark task as completed
+                    final=True,                     # This is the last status update
                 )
+                print(f"⏰ TellTimeAgent: Sending completion status: {status_event}")
+                await event_queue.enqueue_event(status_event)
 
             elif event['require_user_input']:  # If the agent needs more information from user
                 # Enqueue an input_required status with a message
