@@ -1,111 +1,175 @@
 # =============================================================================
 # client/client.py
 # =============================================================================
-# 目的：
-# 此檔案定義了一個可重複使用、非同步的 Python client，用於與 Agent2Agent (A2A) 伺服器互動。
-#
-# 支援：
-# - 發送任務並接收回應
-# - 查詢任務狀態或歷史
-# -（本簡化版不支援串流與取消功能）
+# Purpose:
+# This file defines a dynamic async client built on top of the official
+# A2A Python SDK. It can:
+# - Detect agent capabilities (streaming or not)
+# - Send queries in a loop
+# - Handle single-turn or multi-turn conversations
+# - Automatically pick between streaming and non-streaming flows
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# 匯入
+# Imports
 # -----------------------------------------------------------------------------
+import asyncio                      # Provides support for asynchronous programming and I/O operations
+import json                         # Allows encoding and decoding JSON data
+import traceback                    # Prints detailed tracebacks in case of errors
+from uuid import uuid4              # Generates unique message IDs
+from typing import Any              # Allows function arguments and variables to accept any type
 
-import json
-from uuid import uuid4                                 # 用於編碼/解碼 JSON 資料
-import httpx                                # 非同步 HTTP client，用於發送網路請求
-from httpx_sse import connect_sse           # httpx 的 SSE 擴充（目前未用）
-from typing import Any                      # 型別提示，增加彈性
+import click                        # Library to easily create command-line interfaces
+import httpx                        # Async HTTP client for sending requests to agents
+from rich import print as rprint    # Enhanced print function to support colors and formatting
+from rich.syntax import Syntax      # Used to highlight JSON output in the terminal
 
-# 匯入支援的請求型別
-from models.request import SendTaskRequest, GetTaskRequest  # 已移除 CancelTaskRequest
-
-# JSON-RPC 2.0 的基礎請求格式
-from models.json_rpc import JSONRPCRequest
-
-# 任務結果與代理身份的模型
-from models.task import Task, TaskSendParams
-from models.agent import AgentCard
-
-
-# -----------------------------------------------------------------------------
-# 自訂錯誤類別
-# -----------------------------------------------------------------------------
-
-class A2AClientHTTPError(Exception):
-    """當 HTTP 請求失敗（如伺服器回應異常）時拋出"""
-    pass
-
-class A2AClientJSONError(Exception):
-    """當回應不是有效的 JSON 時拋出"""
-    pass
-
+# Import the official A2A SDK client and related types
+from a2a.client import A2AClient
+from a2a.types import (
+    AgentCard,                      # Metadata about the agent
+    SendMessageRequest,             # For sending regular (non-streaming) messages
+    SendStreamingMessageRequest,    # For sending streaming messages
+    MessageSendParams,              # Structure to hold message content
+    SendMessageSuccessResponse,     # Represents a successful response from the agent
+    Task,                           # Task object representing the agent's work unit
+    TaskState,                      # Enum describing current task state (working, complete, etc.)
+    GetTaskRequest,                 # Used to request status of a task
+    TaskQueryParams,                # Parameters needed to fetch a specific task
+)
 
 # -----------------------------------------------------------------------------
-# A2AClient：與 A2A 代理溝通的主要介面
+# Helper: Create a message payload in expected A2A format
 # -----------------------------------------------------------------------------
+def build_message_payload(text: str, task_id: str | None = None, context_id: str | None = None) -> dict[str, Any]:
+    # Constructs a dictionary payload that matches A2A message format
+    return {
+        "message": {
+            "role": "user",  # The role of the message sender
+            "parts": [{"kind": "text", "text": text}],  # The actual message content
+            "messageId": uuid4().hex,  # Unique message ID for tracking
+            **({"taskId": task_id} if task_id else {}),  # Include taskId only if it's a follow-up
+            **({"contextId": context_id} if context_id else {}),  # Include contextId for continuity
+        }
+    }
 
-class A2AClient:
-    def __init__(self, agent_card: AgentCard = None, url: str = None):
-        """
-        使用 agent card 或直接 URL 初始化 client。
-        兩者必須擇一提供。
-        """
-        if agent_card:
-            self.url = agent_card.url
-        elif url:
-            self.url = url
+# -----------------------------------------------------------------------------
+# Helper: Pretty print JSON objects using syntax coloring
+# -----------------------------------------------------------------------------
+def print_json_response(response: Any, title: str) -> None:
+    # Displays a formatted and color-highlighted view of the response
+    print(f"\n=== {title} ===")  # Section title for clarity
+    try:
+        if hasattr(response, "root"):  # Check if response is wrapped by SDK
+            data = response.root.model_dump(mode="json", exclude_none=True)
         else:
-            raise ValueError("必須提供 agent_card 或 url 其中之一")
+            data = response.model_dump(mode="json", exclude_none=True)
 
+        json_str = json.dumps(data, indent=2, ensure_ascii=False)  # Convert dict to pretty JSON string
+        syntax = Syntax(json_str, "json", theme="monokai", line_numbers=False)  # Apply syntax highlighting
+        rprint(syntax)  # Print it with color
+    except Exception as e:
+        # Print fallback text if something fails
+        rprint(f"[red bold]Error printing JSON:[/red bold] {e}")
+        rprint(repr(response))
 
-    # -------------------------------------------------------------------------
-    # send_task：發送新任務給代理
-    # -------------------------------------------------------------------------
-    async def send_task(self, payload: dict[str, Any]) -> Task:
+# -----------------------------------------------------------------------------
+# Handles sending one non-streaming message and optionally a follow-up
+# -----------------------------------------------------------------------------
+async def handle_non_streaming(client: A2AClient, text: str):
+    # Build and send the first message
+    request = SendMessageRequest(params=MessageSendParams(**build_message_payload(text)))
+    result = await client.send_message(request)  # Wait for agent reply
+    print_json_response(result, "Agent Reply")  # Print the reply
 
-        request = SendTaskRequest(
-            id=uuid4().hex,
-            params=TaskSendParams(**payload)  # ✅ 正確包裝成模型
-        )
+    # If agent needs more input, prompt user again
+    if isinstance(result.root, SendMessageSuccessResponse):
+        task = result.root.result  # Extract task
+        if task.status.state == TaskState.input_required:
+            follow_up = input("\U0001F7E1 Agent needs more input. Your reply: ")
+            follow_up_req = SendMessageRequest(
+                params=MessageSendParams(**build_message_payload(follow_up, task.id, task.contextId))
+            )
+            follow_up_resp = await client.send_message(follow_up_req)
+            print_json_response(follow_up_resp, "Follow-up Response")
 
-        print("\n📤 發送 JSON-RPC 請求：")
-        print(json.dumps(request.model_dump(), indent=2))
+# -----------------------------------------------------------------------------
+# Handles streaming message and recursively continues if more input is needed
+# -----------------------------------------------------------------------------
+async def handle_streaming(client: A2AClient, text: str, task_id: str | None = None, context_id: str | None = None):
+    # Construct streaming request payload
+    request = SendStreamingMessageRequest(params=MessageSendParams(**build_message_payload(text, task_id, context_id)))
 
-        response = await self._send_request(request)
-        return Task(**response["result"])  # ✅ 只取 'result' 欄位
+    # Track latest task/context ID to support multi-turn
+    latest_task_id = None
+    latest_context_id = None
+    input_required = False
 
+    # Process each streamed update
+    async for update in client.send_message_streaming(request):
+        print_json_response(update, "Streaming Update")  # Print each update as it comes
 
+        # Extract context/task from current update
+        if hasattr(update.root, "result"):
+            result = update.root.result
+            if hasattr(result, "contextId"):
+                latest_context_id = result.contextId
+            if hasattr(result, "status") and result.status.state == TaskState.input_required:
+                latest_task_id = result.taskId
+                input_required = True
 
-    # -------------------------------------------------------------------------
-    # get_task：查詢先前發送任務的狀態或歷史
-    # -------------------------------------------------------------------------
-    async def get_task(self, payload: dict[str, Any]) -> Task:
-        request = GetTaskRequest(params=payload)
-        response = await self._send_request(request)
-        return Task(**response["result"])
+    # If input was required, get response from user and continue conversation
+    if input_required and latest_task_id and latest_context_id:
+        follow_up = input("\U0001F7E1 Agent needs more input. Your reply: ")
+        await handle_streaming(client, follow_up, latest_task_id, latest_context_id)
 
+# -----------------------------------------------------------------------------
+# Loop for querying the agent repeatedly
+# -----------------------------------------------------------------------------
+async def interactive_loop(client: A2AClient, supports_streaming: bool):
+    print("\nEnter your query below. Type 'exit' to quit.")  # Print instructions for user
+    while True:
+        query = input("\n\U0001F7E2 Your query: ").strip()  # Get user input
+        if query.lower() in {"exit", "quit"}:
+            print("\U0001F44B Exiting...")  # Say goodbye
+            break
+        # Choose path based on agent's capability
+        if supports_streaming:
+            await handle_streaming(client, query)
+        else:
+            await handle_non_streaming(client, query)
 
+# -----------------------------------------------------------------------------
+# Command-line entry point
+# -----------------------------------------------------------------------------
+@click.command()
+@click.option("--agent-url", default="http://localhost:10000", help="URL of the A2A agent to connect to")
+def main(agent_url: str):
+    asyncio.run(run_main(agent_url))  # Launch async event loop with provided agent URL
 
-    # -------------------------------------------------------------------------
-    # _send_request：內部輔助函式，發送 JSON-RPC 請求
-    # -------------------------------------------------------------------------
-    async def _send_request(self, request: JSONRPCRequest) -> dict[str, Any]:
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    self.url,
-                    json=request.model_dump(),  # 將 Pydantic 模型轉為 JSON
-                    timeout=30
-                )
-                response.raise_for_status()     # 若狀態碼為 4xx/5xx 則拋出錯誤
-                return response.json()          # 回傳解析後的 dict
+# -----------------------------------------------------------------------------
+# Async runner: sets up client, agent card, and launches the loop
+# -----------------------------------------------------------------------------
+async def run_main(agent_url: str):
+    print(f"Connecting to agent at {agent_url}...")  # Let user know we're starting connection
+    try:
+        async with httpx.AsyncClient() as session:  # Use async context to keep session open
+            client = await A2AClient.get_client_from_agent_card_url(session, agent_url)  # Create A2A client
+            client.httpx_client.timeout = 60  # Increase timeout for long operations
 
-            except httpx.HTTPStatusError as e:
-                raise A2AClientHTTPError(e.response.status_code, str(e)) from e
+            res = await session.get(f"{agent_url}/.well-known/agent.json")  # Get agent metadata
+            agent_card = AgentCard.model_validate(res.json())  # Validate the structure of the metadata
+            supports_streaming = agent_card.capabilities.streaming  # Check if agent can stream
 
-            except json.JSONDecodeError as e:
-                raise A2AClientJSONError(str(e)) from e
+            rprint(f"[green bold]✅ Connected. Streaming supported:[/green bold] {supports_streaming}")  # Confirm success
+            await interactive_loop(client, supports_streaming)  # Start conversation loop
+
+    except Exception:
+        traceback.print_exc()  # Show full error trace
+        print("❌ Failed to connect or run. Ensure the agent is live and reachable.")  # Friendly error message
+
+# -----------------------------------------------------------------------------
+# Execute main only when run as script
+# -----------------------------------------------------------------------------
+if __name__ == "__main__":
+    main()  # Run main CLI logic
