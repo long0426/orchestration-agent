@@ -1,4 +1,14 @@
-[
-    "http://localhost:10001",
-    "http://localhost:10002"
-]
+{
+    "agents": [
+        {
+            "name": "Greeting Agent",
+            "url": "http://localhost:10001/",
+            "description": "生成個人化問候語的代理"
+        },
+        {
+            "name": "Tell Time Agent",
+            "url": "http://localhost:10002/",
+            "description": "提供當前時間資訊的代理"
+        }
+    ]
+}
