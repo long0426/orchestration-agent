@@ -1,98 +1,109 @@
 # =============================================================================
 # agents/excel_whisper_agent/agent.py
 # =============================================================================
-# 🎯 目的：
-# 本檔案定義一個簡單的 AI 代理 ExcelWhisperAgent。
-# 它使用 Google ADK (Agent Development Kit) 與 Gemini 模型來讀取 Excel 檔案。
+# 🎯 Purpose:
+# This file defines a simple AI agent called ExcelWhisperAgent.
+# It uses Google's ADK (Agent Development Kit) and Gemini model to read and analyze Excel files.
 # =============================================================================
 
 
 # -----------------------------------------------------------------------------
-# 📦 內建與外部套件匯入
+# 📦 Built-in & External Library Imports
 # -----------------------------------------------------------------------------
+
+# 🧠 Gemini-based AI agent provided by Google's ADK
 from google.adk.agents.llm_agent import LlmAgent
 
-# 📚 ADK 服務：session、記憶體、檔案 artifact
+# 📚 ADK services for session, memory, and file-like "artifacts"
 from google.adk.sessions import InMemorySessionService
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.artifacts import InMemoryArtifactService
 
-# 🏃 Runner 負責串接 agent、session、記憶體與檔案，形成完整系統
+# 🏃 The "Runner" connects the agent, session, memory, and files into a complete system
 from google.adk.runners import Runner
 
-# 🧾 Gemini 相容型別，用於格式化輸入/輸出訊息
+# 🧾 Gemini-compatible types for formatting input/output messages
 from google.genai import types
 
-from .tools import read_excel
-
-# 🔐 載入環境變數（如 API 金鑰）
+# 🔐 Load environment variables (like API keys) from a `.env` file
 from dotenv import load_dotenv
-load_dotenv()  # 將 GOOGLE_API_KEY 等變數載入系統
-# 這樣可避免將敏感資料寫死在程式碼中。
+load_dotenv()  # Load variables like GOOGLE_API_KEY into the system
+# This allows you to keep sensitive data out of your code.
+
+from .tools import read_excel
+from .instruction import INSTRUCTION
 
 
 # -----------------------------------------------------------------------------
-# 🕒 ExcelWhisperAgent：你的 Excel 解析專家代理
+# 📊 ExcelWhisperAgent: Your Excel analysis expert agent
 # -----------------------------------------------------------------------------
 
 class ExcelWhisperAgent:
-    """
-    ExcelWhisperAgent：接收 Excel 檔案路徑，讀取並解析內容，回傳摘要。
-    支援 .xlsx/.xls 檔案，回傳前幾行資料與欄位資訊。
-    """
+    # This agent only supports plain text input/output
     SUPPORTED_CONTENT_TYPES = ["text", "text/plain"]
 
     def __init__(self):
         """
-        👷 初始化 ExcelWhisperAgent：
-        - 建立 LLM 代理（由 Gemini 提供）
-        - 設定 session 處理、記憶體與 runner 以執行任務
+        👷 Initialize the ExcelWhisperAgent:
+        - Creates the LLM agent (powered by Gemini)
+        - Sets up session handling, memory, and a runner to execute tasks
         """
-        self._agent = self._build_agent()  # 設定 Gemini 代理
-        self._user_id = "excel_whisper_agent_user"  # 固定 user ID，簡化 session
+        self._agent = self._build_agent()  # Set up the Gemini agent
+        self._user_id = "excel_whisper_agent_user"  # Use a fixed user ID for simplicity
 
-        # 🧠 Runner 實際管理 agent 與其執行環境
+        # 🧠 The Runner is what actually manages the agent and its environment
         self._runner = Runner(
             app_name=self._agent.name,
             agent=self._agent,
-            artifact_service=InMemoryArtifactService(),  # 處理檔案（本例未用）
-            session_service=InMemorySessionService(),    # 管理對話 session
-            memory_service=InMemoryMemoryService(),      # 可選：記憶過往訊息
+            artifact_service=InMemoryArtifactService(),  # For files (not used here)
+            session_service=InMemorySessionService(),    # Keeps track of conversations
+            memory_service=InMemoryMemoryService(),      # Optional: remembers past messages
         )
 
     def _build_agent(self) -> LlmAgent:
         """
-        ⚙️ 建立並回傳一個基本設定的 Gemini 代理。
+        ⚙️ Creates and returns a Gemini agent with basic settings.
 
-        回傳：
-            LlmAgent: 來自 Google ADK 的代理物件
+        Returns:
+            LlmAgent: An agent object from Google's ADK
         """
         return LlmAgent(
-            model="gemini-1.5-flash-latest",         # Gemini 模型版本
-            name="excel_whisper_agent",                  # 代理名稱
-            description="你是個Excel專家，可以幫助使用者處理Excel文件",    # metadata 描述
-            instruction="""
-                1. 你是一個Excel專家，可以幫助使用者處理Excel文件。
-                2. 你可以讀取Excel檔案名稱，並且讀取Excel檔案的內容。
-                3. 你可以讀取工作表名稱。
-                4. 如果沒有提供路徑檔名，則使用環境變數FILE_PATH的值為路徑。
-                5. 如果沒有提供工作表名稱，則讀取"工作表1"。
-            """,
+            model="gemini-1.5-flash-latest",         # Gemini model version
+            name="excel_whisper_agent",              # Name of the agent
+            description="Excel analysis expert that can read and analyze Excel files",    # Description for metadata
+            instruction=INSTRUCTION,                 # System prompt
             tools=[
                 read_excel,
             ],
         )
 
-    async def invoke(self, file_path: str, session_id: str) -> str:
+    async def invoke(self, query: str, session_id: str) -> str:
         """
-        代理主要入口：
-        參數：
-            file_path (str): Excel 檔案路徑（如 "data/test.xlsx"）
-            session_id (str): 用於分組訊息的 session 識別碼
-        回傳：
-            str: 代理回覆內容
+        📥 Handle a user query and return a response string.
+        Note - function updated 28 May 2025
+        Summary of changes:
+        1. Agent's invoke method is made async
+        2. All async calls (get_session, create_session, run_async)
+            are awaited inside invoke method
+        3. task manager's on_send_task updated to await the invoke call
+
+        Reason - get_session and create_session are async in the
+        "Current" Google ADK version and were synchronous earlier
+        when this lecture was recorded. This is due to a recent change
+        in the Google ADK code
+        https://github.com/google/adk-python/commit/1804ca39a678433293158ec066d44c30eeb8e23b
+
+        Args:
+            query (str): What the user said (e.g., "read my excel file")
+            session_id (str): Helps group messages into a session
+
+        Returns:
+            str: Agent's reply (usually Excel analysis results)
         """
-        # 🔁 嘗試重用現有 session，若無則新建
+
+        print(f"📊 ExcelWhisperAgent.invoke: Received query: '{query}' with session_id: '{session_id}'")
+
+        # 🔁 Try to reuse an existing session (or create one if needed)
         session = await self._runner.session_service.get_session(
             app_name=self._agent.name,
             user_id=self._user_id,
@@ -104,16 +115,16 @@ class ExcelWhisperAgent:
                 app_name=self._agent.name,
                 user_id=self._user_id,
                 session_id=session_id,
-                state={}  # 可選：session 狀態字典
+                state={}  # Optional dictionary to hold session state
             )
 
-        # 📨 將使用者訊息格式化為 Gemini 模型期望的格式
+        # 📨 Format the user message in a way the Gemini model expects
         content = types.Content(
             role="user",
-            parts=[types.Part.from_text(text=file_path)]
+            parts=[types.Part.from_text(text=query)]
         )
 
-        # 🚀 執行代理，收集最後一個事件
+        # 🚀 Run the agent using the Runner and collect the last event
         last_event = None
         async for event in self._runner.run_async(
             user_id=self._user_id,
@@ -122,22 +133,32 @@ class ExcelWhisperAgent:
         ):
             last_event = event
 
-        # 🧹 若出錯則回傳空字串
+        # 🧹 Fallback: return empty string if something went wrong
         if not last_event or not last_event.content or not last_event.content.parts:
+            print(f"📊 ExcelWhisperAgent.invoke: No valid response generated")
             return ""
 
-        # 📤 擷取所有文字回應並合併成一個字串
-        return "\n".join([p.text for p in last_event.content.parts if p.text])
+        # 📤 Extract and join all text responses into one string
+        response = "\n".join([p.text for p in last_event.content.parts if p.text])
+        print(f"📊 ExcelWhisperAgent.invoke: Generated response: '{response}'")
+        return response
 
     async def stream(self, query: str, session_id: str):
         """
-        🌀 範例：模擬「串流」代理，回傳單一回覆。
-        這裡僅示範串流機制。
+        🌀 Simulates a "streaming" agent that processes Excel files.
+        This is here just to demonstrate that streaming is possible.
 
-        產生：
-            dict: 回應 payload，表示任務完成並給出時間
+        Yields:
+            dict: Response payload that says the task is complete and gives the Excel analysis
         """
-        yield {
+        print(f"📊 ExcelWhisperAgent.stream: Processing query: '{query}' with session_id: '{session_id}'")
+
+        # Get the actual response from the agent
+        response_content = await self.invoke(query, session_id)
+
+        response = {
             "is_task_complete": True,
-            "content": "模擬「串流」代理"
+            "content": response_content
         }
+        print(f"📊 ExcelWhisperAgent.stream: Yielding response: {response}")
+        yield response

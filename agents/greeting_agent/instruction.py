@@ -11,6 +11,6 @@ INSTRUCTION = """
         that agent.
 
     When asked to greet, first call list_agents(),
-    then call_agent('TellTime Agent','What is the current time?'),
+    then call_agent('Tell Time Agent','What is the current time?'),
     then craft a 2–3 line poetic greeting referencing that time.
 """

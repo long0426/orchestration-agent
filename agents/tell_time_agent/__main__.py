@@ -79,7 +79,7 @@ def main(host: str, port: int):
 # -----------------------------------------------------------------------------
 def build_agent_card(host: str, port: int) -> AgentCard:
     return AgentCard(
-        name="TellTime Agent",                                      # Human-readable name of the agent
+        name="Tell Time Agent",                                      # Human-readable name of the agent
         description="Tells the current system time.",               # Short description
         url=f"http://{host}:{port}/",                               # Full URL where the agent is reachable
         version="1.0.0",                                            # Version of the agent

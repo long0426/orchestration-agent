@@ -57,15 +57,19 @@ def main(host: str, port: int):
         name="OrchestrateAgent",
         description=(
             "根據意圖將使用者請求路由到適當的子代理，"
-            "支援時間查詢、問候語生成等功能"
+            "支援時間查詢、問候語生成、Excel檔案分析等功能"
         ),
-        tags=["routing", "orchestration", "delegation"],
+        tags=["routing", "orchestration", "delegation", "excel", "time", "greeting"],
         examples=[
             "What is the time?",
             "Greet me",
             "Say hello based on time",
             "Tell me the current time",
-            "Generate a greeting"
+            "Generate a greeting",
+            "讀取我的Excel檔案",
+            "分析這個試算表",
+            "給我Excel檔案的內容摘要",
+            "read /path/to/file.xlsx"
         ]
     )
     

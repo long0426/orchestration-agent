@@ -28,7 +28,7 @@ from google.adk.runners import Runner
 from google.genai import types
 
 # 🔍 Discovery client for finding other agents
-from utilities.discovery import DiscoveryClient
+from utilities.a2a.agent_discovery import DiscoveryClient
 
 # 🔗 Connector for interacting with other agents
 from utilities.a2a.agent_connect import AgentConnector

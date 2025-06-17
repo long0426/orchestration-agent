@@ -1,5 +1,19 @@
-[
-    "http://localhost:10000",
-    "http://localhost:10001",
-    "http://localhost:10002"
-]
+{
+  "agents": [
+    {
+      "name": "Greeting Agent",
+      "description": "根據時間生成個人化問候語",
+      "url": "http://localhost:10001"
+    },
+    {
+      "name": "Tell Time Agent",
+      "description": "提供當前時間資訊",
+      "url": "http://localhost:10002"
+    },
+    {
+      "name": "Excel Whisper Agent",
+      "description": "使用 pandas 處理 Excel 檔案",
+      "url": "http://localhost:10003"
+    }
+  ]
+}

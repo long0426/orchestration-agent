@@ -64,7 +64,7 @@ class HostAgent:
         """檢查單個代理的連線狀態"""
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{agent_data['url']}.well-known/agent.json")
+                response = await client.get(f"{agent_data['url']}/.well-known/agent.json")
                 if response.status_code == 200:
                     return True
                 else:
@@ -80,7 +80,7 @@ class HostAgent:
         print("="*60)
 
         try:
-            with open("utilities/agent_registry.json", "r") as f:
+            with open("utilities/a2a/agent_registry.json", "r") as f:
                 registry = json.load(f)
 
             agents = registry.get("agents", [])
@@ -103,7 +103,7 @@ class HostAgent:
                 # 連線檢查：只要能取得有效的 agent card 就算成功
                 try:
                     with httpx.Client(timeout=3.0) as client:
-                        response = client.get(f"{url}.well-known/agent.json")
+                        response = client.get(f"{url}/.well-known/agent.json")
                         if response.status_code == 200:
                             agent_info = response.json()
                             # 驗證 agent card 的基本結構
@@ -127,7 +127,7 @@ class HostAgent:
                 print()  # 空行分隔
 
         except FileNotFoundError:
-            print("❌ 找不到 utilities/agent_registry.json 檔案")
+            print("❌ 找不到 utilities/a2a/agent_registry.json 檔案")
         except json.JSONDecodeError:
             print("❌ agent_registry.json 檔案格式錯誤")
         except Exception as e:
@@ -145,7 +145,7 @@ class HostAgent:
 
             # 從註冊表載入代理資訊
             try:
-                with open("utilities/agent_registry.json", "r") as f:
+                with open("utilities/a2a/agent_registry.json", "r") as f:
                     registry = json.load(f)
 
                 agents_info = []
@@ -157,7 +157,7 @@ class HostAgent:
                     # 檢查連線狀態：只要能取得 agent card 就算成功
                     try:
                         with httpx.Client(timeout=2.0) as client:
-                            response = client.get(f"{url}.well-known/agent.json")
+                            response = client.get(f"{url}/.well-known/agent.json")
                             if response.status_code == 200:
                                 # 嘗試解析 JSON 以確保是有效的 agent card
                                 agent_card = response.json()
@@ -187,7 +187,7 @@ class HostAgent:
             
             try:
                 # 從註冊表載入代理資訊
-                with open("utilities/agent_registry.json", "r") as f:
+                with open("utilities/a2a/agent_registry.json", "r") as f:
                     registry = json.load(f)
                 
                 # 尋找匹配的代理
@@ -230,11 +230,13 @@ class HostAgent:
                 if task.artifacts:
                     print(f"🏠 HostAgent: Found {len(task.artifacts)} artifacts")
                     for artifact in task.artifacts:
-                        if artifact.name == 'current_result' and artifact.parts:
+                        print(f"🏠 HostAgent: Checking artifact: {artifact.name}")
+                        # 檢查多種可能的 artifact 名稱
+                        if artifact.name in ['current_result', 'excel_analysis_result'] and artifact.parts:
                             for part in artifact.parts:
                                 if hasattr(part, 'root') and hasattr(part.root, 'text'):
                                     result = part.root.text
-                                    print(f"🏠 HostAgent: Extracted text from artifact: '{result}'")
+                                    print(f"🏠 HostAgent: Extracted text from artifact '{artifact.name}': '{result}'")
                                     return result
                 
                 # 備用：從歷史中提取

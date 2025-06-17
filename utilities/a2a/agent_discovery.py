@@ -63,10 +63,17 @@ class DiscoveryClient:
             with open(self.registry_file, "r") as f:
                 # Parse the entire file as JSON
                 data = json.load(f)
-            # Ensure the JSON is a list, not an object or other type
-            if not isinstance(data, list):
-                raise ValueError("Registry file must contain a JSON list of URLs.")
-            return data
+
+            # Handle both formats: list of URLs or object with agents array
+            if isinstance(data, list):
+                # Legacy format: direct list of URLs
+                return data
+            elif isinstance(data, dict) and "agents" in data:
+                # New format: object with agents array containing name, description, url
+                return [agent["url"] for agent in data["agents"] if "url" in agent]
+            else:
+                raise ValueError("Registry file must contain either a JSON list of URLs or an object with 'agents' array.")
+
         except FileNotFoundError:
             # If the file doesn't exist, log a warning and return an empty list
             logger.warning(f"Registry file not found: {self.registry_file}")
