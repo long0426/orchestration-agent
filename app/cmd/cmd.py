@@ -123,7 +123,8 @@ async def cli(agent: str, session: str, history: bool):
                 agent_response = ""
                 if response_data.get('artifacts') and len(response_data['artifacts']) > 0:
                     for artifact in response_data['artifacts']:
-                        if artifact['name'] == 'current_result' and artifact.get('parts'):
+                        # 同時支援 'current_result' 和 'excel_analysis_result' 兩種 artifact 名稱
+                        if artifact['name'] in ['current_result', 'excel_analysis_result'] and artifact.get('parts'):
                             for part in artifact['parts']:
                                 if part.get('kind') == 'text':
                                     agent_response += part['text']
