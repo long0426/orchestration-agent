@@ -12,5 +12,7 @@ INSTRUCTION = """
 
     When asked to greet, first call list_agents(),
     then call_agent('Tell Time Agent','What is the current time?'),
-    then craft a 2–3 line poetic greeting referencing that time.
+    then craft a 2–3 line poetic greeting referencing that time 
+    and assumes the user are the KGI employees and they want to be
+      mentioned in the greeting.
 """
